@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบบันทึกการเข้าออกงานนอกสถานที่ - Ampas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- html2canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- QR Code -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
+</head>
+<body class="bg-gray-100">
+  <div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">ระบบบันทึกการเข้าออกงานนอกสถานที่ (Ampas Industries)</h1>
+
+    <!-- ฟอร์มยื่นคำขอ -->
+    <div id="requestSection" class="bg-white p-6 rounded-lg shadow-md mb-6">
+      <h2 class="text-xl font-semibold mb-4">ยื่นคำขอทำงานนอกสถานที่</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium">ชื่อ-สกุล</label>
+          <input id="employeeName" type="text" class="w-full p-2 border rounded" placeholder="กรอกชื่อ-สกุล">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">วันที่/เวลา</label>
+          <input id="dateTime" type="datetime-local" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">หมายเหตุ</label>
+          <textarea id="note" class="w-full p-2 border rounded" placeholder="กรอกรายละเอียด"></textarea>
+        </div>
+        <button onclick="submitRequest()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">ยื่นคำขอ</button>
+      </div>
+    </div>
+
+    <!-- การอนุมัติ (สำหรับผู้จัดการ) -->
+    <div id="managerSection" class="bg-white p-6 rounded-lg shadow-md mb-6">
+      <h2 class="text-xl font-semibold mb-4">อนุมัติคำขอ</h2>
+      <div class="mb-4">
+        <label class="block text-sm font-medium">ชื่อผู้จัดการ</label>
+        <input id="managerName" type="text" class="w-full p-2 border rounded" placeholder="กรอกชื่อผู้จัดการ">
+      </div>
+      <div id="requestList" class="space-y-4"></div>
+    </div>
+
+    <!-- บันทึกเวลาเข้าออก (สำหรับยาม) -->
+    <div id="guardSection" class="bg-white p-6 rounded-lg shadow-md mb-6">
+      <h2 class="text-xl font-semibold mb-4">บันทึกเวลาเข้าออก</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium">สแกน QR Code หรือกรอก ID คำขอ</label>
+          <input id="requestId" type="text" class="w-full p-2 border rounded" placeholder="กรอก ID คำขอ">
+        </div>
+        <button onclick="checkIn()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">บันทึกเวลาเข้า</button>
+        <button onclick="checkOut()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">บันทึกเวลาออก</button>
+      </div>
+    </div>
+
+    <!-- รายงาน -->
+    <div id="reportSection" class="bg-white p-6 rounded-lg shadow-md">
+      <h2 class="text-xl font-semibold mb-4">รายงานการเข้าออก</h2>
+      <button onclick="downloadPDF()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4">ดาวน์โหลด PDF ทั้งหมด</button>
+      <div id="reportList" class="space-y-4"></div>
+    </div>
+
+    <!-- ฟอร์มแก้ไขคำขอ -->
+    <div id="editSection" class="bg-white p-6 rounded-lg shadow-md mb-6 hidden">
+      <h2 class="text-xl font-semibold mb-4">แก้ไขคำขอ</h2>
+      <div class="space-y-4">
+        <input id="editId" type="hidden">
+        <div>
+          <label class="block text-sm font-medium">ชื่อ-สกุล</label>
+          <input id="editEmployeeName" type="text" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">วันที่/เวลา</label>
+          <input id="editDateTime" type="datetime-local" class="w-full p-2 border rounded">
+        </div>
+        <div>
+          <label class="block text-sm font-medium">หมายเหตุ</label>
+          <textarea id="editNote" class="w-full p-2 border rounded"></textarea>
+        </div>
+        <button onclick="saveEdit()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">บันทึกการแก้ไข</button>
+        <button onclick="cancelEdit()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ตัวแปรเก็บคำขอทั้งหมด
+    let requests = [];
+
+    // ตัวอย่างการยื่นคำขอ
+    function submitRequest() {
+      const employeeName = document.getElementById('employeeName').value;
+      const dateTime = document.getElementById('dateTime').value;
+      const note = document.getElementById('note').value;
+
+      if (!employeeName || !dateTime) {
+        alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+        return;
+      }
+
+      const request = {
+        id: Date.now().toString(), // ใช้ timestamp เป็น ID
+        employeeName,
+        dateTime,
+        note: note || '',
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      // เพิ่มคำขอใหม่ลงใน array
+      requests.push(request);
+      alert('ยื่นคำขอสำเร็จ');
+      clearForm();
+
+      // แสดงคำขอใหม่ใน managerSection และ reportSection ทันที
+      displayRequest(request);
+      displayReport(request);
+    }
+
+    // แสดงคำขอในส่วนของผู้จัดการ
+    function displayRequest(request) {
+      const requestList = document.getElementById('requestList');
+      const requestDiv = document.createElement('div');
+      requestDiv.className = 'border p-4 rounded';
+      requestDiv.id = `request-${request.id}`; // เพิ่ม ID เพื่อใช้ในการจับภาพ
+      requestDiv.innerHTML = `
+        <p><strong>ID:</strong> ${request.id}</p>
+        <p><strong>ชื่อ-สกุล:</strong> ${request.employeeName}</p>
+        <p><strong>วันที่/เวลา:</strong> ${request.dateTime}</p>
+        <p><strong>หมายเหตุ:</strong> ${request.note || '-'}</p>
+        <p><strong>เวลาเข้า:</strong> ${request.checkIn || '-'}</p>
+        <p><strong>เวลาออก:</strong> ${request.checkOut || '-'}</p>
+        <p><strong>สถานะ:</strong> ${request.status}</p>
+        <p><strong>ผู้จัดการ:</strong> ${request.manager || '-'}</p>
+        <div id="qrcode-${request.id}" class="my-2"></div>
+        <button onclick="approveRequest('${request.id}')" class="bg-green-500 text-white px-2 py-1 rounded">อนุมัติ</button>
+        <button onclick="rejectRequest('${request.id}')" class="bg-red-500 text-white px-2 py-1 rounded">ปฏิเสธ</button>
+        ${['pending', 'approved'].includes(request.status) ? '<button onclick="editRequest(\'' + request.id + '\')" class="bg-yellow-500 text-white px-2 py-1 rounded">แก้ไข</button>' : ''}
+      `;
+      requestList.appendChild(requestDiv);
+
+      // สร้าง QR Code
+      QRCode.toCanvas(document.getElementById(`qrcode-${request.id}`), request.id, { width: 100 }, (error) => {
+        if (error) console.error(error);
+      });
+    }
+
+    // ฟังก์ชันอนุมัติ
+    function approveRequest(id) {
+      const managerName = document.getElementById('managerName').value;
+      if (!managerName) {
+        alert('กรุณากรอกชื่อผู้จัดการ');
+        return;
+      }
+
+      const request = requests.find(r => r.id === id);
+      if (request) {
+        request.status = 'approved';
+        request.manager = managerName;
+        alert('อนุมัติคำขอสำเร็จ');
+        loadRequests();
+      }
+    }
+
+    // ฟังก์ชันปฏิเสธ
+    function rejectRequest(id) {
+      const managerName = document.getElementById('managerName').value;
+      if (!managerName) {
+        alert('กรุณากรอกชื่อผู้จัดการ');
+        return;
+      }
+
+      const request = requests.find(r => r.id === id);
+      if (request) {
+        request.status = 'rejected';
+        request.manager = managerName;
+        alert('ปฏิเสธคำขอสำเร็จ');
+        loadRequests();
+      }
+    }
+
+    // บันทึกเวลาเข้า
+    function checkIn() {
+      const requestId = document.getElementById('requestId').value;
+      if (!requestId) {
+        alert('กรุณากรอก ID คำขอ');
+        return;
+      }
+
+      const request = requests.find(r => r.id === requestId);
+      if (!request || request.status !== 'approved') {
+        alert('คำขอไม่ถูกต้องหรือยังไม่ได้รับการอนุมัติ');
+        return;
+      }
+
+      request.checkIn = new Date().toLocaleString();
+      alert('บันทึกเวลาเข้าสำเร็จ');
+      loadRequests();
+    }
+
+    // บันทึกเวลาออก
+    function checkOut() {
+      const requestId = document.getElementById('requestId').value;
+      if (!requestId) {
+        alert('กรุณากรอก ID คำขอ');
+        return;
+      }
+
+      const request = requests.find(r => r.id === requestId);
+      if (!request || request.status !== 'approved') {
+        alert('คำขอไม่ถูกต้องหรือยังไม่ได้รับการอนุมัติ');
+        return;
+      }
+
+      request.checkOut = new Date().toLocaleString();
+      alert('บันทึกเวลาออกสำเร็จ');
+      loadRequests();
+    }
+
+    // แสดงรายงาน
+    function displayReport(request) {
+      const reportList = document.getElementById('reportList');
+      const reportDiv = document.createElement('div');
+      reportDiv.className = 'border p-4 rounded';
+      reportDiv.id = `report-${request.id}`; // เพิ่ม ID เพื่อใช้ในการจับภาพ
+      reportDiv.innerHTML = `
+        <p><strong>ID:</strong> ${request.id}</p>
+        <p><strong>ชื่อ-สกุล:</strong> ${request.employeeName}</p>
+        <p><strong>วันที่/เวลา:</strong> ${request.dateTime}</p>
+        <p><strong>หมายเหตุ:</strong> ${request.note || '-'}</p>
+        <p><strong>เวลาเข้า:</strong> ${request.checkIn || '-'}</p>
+        <p><strong>เวลาออก:</strong> ${request.checkOut || '-'}</p>
+        <p><strong>สถานะ:</strong> ${request.status}</p>
+        <p><strong>ผู้จัดการ:</strong> ${request.manager || '-'}</p>
+        <button onclick="downloadPDFById('${request.id}')" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">ดาวน์โหลด PDF</button>
+      `;
+      reportList.appendChild(reportDiv);
+    }
+
+    // ดาวน์โหลด PDF ทั้งหมด
+    async function downloadPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      let yOffset = 10;
+
+      for (const request of requests.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))) {
+        const element = document.getElementById(`report-${request.id}`);
+        if (!element) continue;
+
+        const canvas = await html2canvas(element, { scale: 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const imgProps = doc.getImageProperties(imgData);
+        const pdfWidth = doc.internal.pageSize.getWidth() - 20; // ขนาดหน้า PDF ลบขอบ
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+        if (yOffset + pdfHeight > doc.internal.pageSize.getHeight() - 10) {
+          doc.addPage();
+          yOffset = 10;
+        }
+
+        doc.addImage(imgData, 'PNG', 10, yOffset, pdfWidth, pdfHeight);
+        yOffset += pdfHeight + 10;
+      }
+
+      doc.save('report.pdf');
+    }
+
+    // ดาวน์โหลด PDF เฉพาะ ID
+    async function downloadPDFById(id) {
+      const request = requests.find(r => r.id === id);
+      if (!request) return;
+
+      const element = document.getElementById(`report-${request.id}`);
+      if (!element) return;
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      const canvas = await html2canvas(element, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const imgProps = doc.getImageProperties(imgData);
+      const pdfWidth = doc.internal.pageSize.getWidth() - 20; // ขนาดหน้า PDF ลบขอบ
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      doc.addImage(imgData, 'PNG', 10, 10, pdfWidth, pdfHeight);
+      doc.save(`report_${request.id}.pdf`);
+    }
+
+    // เปิดฟอร์มแก้ไข
+    function editRequest(id) {
+      const request = requests.find(r => r.id === id);
+      if (request) {
+        document.getElementById('editId').value = request.id;
+        document.getElementById('editEmployeeName').value = request.employeeName;
+        document.getElementById('editDateTime').value = request.dateTime;
+        document.getElementById('editNote').value = request.note || '';
+        document.getElementById('editSection').classList.remove('hidden');
+      }
+    }
+
+    // บันทึกการแก้ไข
+    function saveEdit() {
+      const id = document.getElementById('editId').value;
+      const employeeName = document.getElementById('editEmployeeName').value;
+      const dateTime = document.getElementById('editDateTime').value;
+      const note = document.getElementById('editNote').value;
+
+      if (!employeeName || !dateTime) {
+        alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+        return;
+      }
+
+      const request = requests.find(r => r.id === id);
+      if (request) {
+        request.employeeName = employeeName;
+        request.dateTime = dateTime;
+        request.note = note || '';
+        alert('บันทึกการแก้ไขสำเร็จ');
+        loadRequests();
+        cancelEdit();
+      }
+    }
+
+    // ยกเลิกการแก้ไข
+    function cancelEdit() {
+      document.getElementById('editSection').classList.add('hidden');
+    }
+
+    // ล้างฟอร์ม
+    function clearForm() {
+      document.getElementById('employeeName').value = '';
+      document.getElementById('dateTime').value = '';
+      document.getElementById('note').value = '';
+    }
+
+    // โหลดคำขอทั้งหมด (สำหรับการรีเฟรช)
+    function loadRequests() {
+      document.getElementById('requestList').innerHTML = '';
+      document.getElementById('reportList').innerHTML = '';
+      requests.forEach(request => {
+        displayRequest(request);
+        displayReport(request);
+      });
+    }
+
+    // โหลดข้อมูลเริ่มต้น (ถ้ามี)
+    if (requests.length > 0) {
+      loadRequests();
+    }
+  </script>
+</body>
+</html>
